@@ -5,6 +5,8 @@ from flask import Flask, render_template_string, request, redirect, url_for
 
 app = Flask(__name__)
 app.secret_key = 'reaction_gasy_2026_final_fix'
+# Cette ligne est importante pour Render
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  
 
 # --- CONFIGURATION ---
 DB_PATH = '/tmp/boutique.db' 
@@ -41,13 +43,15 @@ def envoyer_telegram(pack, prix, type_react, lien, coms, mode, code_yas, photo_f
     )
     
     try:
+        # Envoi du texte
         requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", 
                       data={"chat_id": ID_TELEGRAM, "text": message, "parse_mode": "Markdown"})
         
+        # Envoi de la photo
         photo_file.seek(0)
         requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendPhoto", 
                       data={"chat_id": ID_TELEGRAM}, 
-                      files={"photo": photo_file})
+                      files={"photo": (photo_file.filename, photo_file.read(), photo_file.content_type)})
     except Exception as e:
         print(f"Erreur Telegram: {e}")
 
@@ -201,7 +205,7 @@ def order():
     coms = request.form.get('coms')
     mode = request.form.get('mode')
     code_yas = request.form.get('code_yas')
-    file = request.files['capture']
+    file = request.files.get('capture')
 
     if file:
         envoyer_telegram(pack, prix, type_react, lien, coms, mode, code_yas, file)
