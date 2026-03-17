@@ -5,10 +5,9 @@ from flask import Flask, render_template_string, request, redirect, url_for
 
 app = Flask(__name__)
 app.secret_key = 'reaction_gasy_2026_final_fix'
-# Cette ligne est importante pour Render
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  
 
 # --- CONFIGURATION ---
+# Utilisation de /tmp pour Render (plan gratuit)
 DB_PATH = '/tmp/boutique.db' 
 TOKEN_TELEGRAM = "8632263179:AAFDjyU6d4eTCMgg4wM4xB1sDBGmWEMod2s"
 ID_TELEGRAM = "7129218282"
@@ -22,8 +21,8 @@ def init_db():
                            type_reaction TEXT, lien TEXT, coms TEXT, mode_payement TEXT, code_yas TEXT)''')
         conn.commit()
         conn.close()
-    except:
-        pass
+    except Exception as e:
+        print(f"Erreur DB: {e}")
 
 def envoyer_telegram(pack, prix, type_react, lien, coms, mode, code_yas, photo_file):
     info_pay = f"🔑 *CODE YAS:* `{code_yas}`" if mode == "Carte Yas" else "📱 *PAIEMENT MOBILE*"
@@ -43,15 +42,16 @@ def envoyer_telegram(pack, prix, type_react, lien, coms, mode, code_yas, photo_f
     )
     
     try:
-        # Envoi du texte
+        # 1. Envoi du texte
         requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", 
                       data={"chat_id": ID_TELEGRAM, "text": message, "parse_mode": "Markdown"})
         
-        # Envoi de la photo
+        # 2. Envoi de la photo (Correction du format pour Render)
         photo_file.seek(0)
+        files = {'photo': (photo_file.filename, photo_file.read(), photo_file.content_type)}
         requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendPhoto", 
                       data={"chat_id": ID_TELEGRAM}, 
-                      files={"photo": (photo_file.filename, photo_file.read(), photo_file.content_type)})
+                      files=files)
     except Exception as e:
         print(f"Erreur Telegram: {e}")
 
@@ -89,15 +89,11 @@ HTML_TEMPLATE = """
                 <b style="color: #1877f2; display: block; margin-bottom: 10px;">🔢 COMMANDE PERSONNALISÉE</b>
                 <label>Combien de réactions ? (Min. 50, Max. 500)</label>
                 <input type="number" id="custom-qty" value="50" min="50" max="500" oninput="calculerPrix()">
-                
                 <label>Prix total calculé :</label>
                 <input type="text" id="custom-price" value="1000ar" readonly style="background: #f0f2f5; font-weight: bold; color: #28a745;">
-                
                 <button class="btn" style="background: #28a745; margin-top: 5px;" onclick="commanderCustom()">COMMANDER CE NOMBRE</button>
             </div>
-
             <div style="text-align: center; color: #65676b; margin: 15px 0; font-size: 14px;">━━━━━━━━ OU CHOISIR UN PACK ━━━━━━━━</div>
-
             {% for pr, qty in [('1000ar','50'),('2000ar','100'),('3900ar','200'),('5900ar','300'),('9800ar','500')] %}
             <div class="card" style="display:flex; justify-content:space-between; align-items:center;">
                 <div><b>👍❤️😂 {{qty}} Reactions</b><br><span class="price">{{pr}}</span></div>
@@ -105,81 +101,58 @@ HTML_TEMPLATE = """
             </div>
             {% endfor %}
         </div>
-
         <div id="step2" class="card" style="display:none;">
             <h3 id="display-pack" style="text-align:center; color:#1877f2;"></h3>
             <form action="/order" method="post" enctype="multipart/form-data">
                 <input type="hidden" name="pack" id="form-pack">
                 <input type="hidden" name="prix" id="form-prix">
-                
                 <label>Lien de la publication :</label>
                 <input type="text" name="lien" placeholder="https://facebook.com/..." required>
-                
-                <label>Commentaire de...(facultatif) :</label>
+                <label>Commentaire de... :</label>
                 <input type="text" name="coms" placeholder="Ex: Dolayn">
-
                 <label>Type de réaction :</label>
                 <select name="type_reaction">
-                    <option value="Mix (Mélange)">Mix (Mélange 👍❤️😂)</option>
+                    <option value="Mix (👍❤️😂)">Mix (Mélange 👍❤️😂)</option>
                     <option value="Like 👍">Like 👍</option>
                     <option value="Love ❤️">Love ❤️</option>
                     <option value="Haha 😂">Haha 😂</option>
-                    <option value="Wouah 😮">Wouah 😮</option>
-                    <option value="Triste 😢">Triste 😢</option>
-                    <option value="Grrr 😡">Grrr 😡</option>
                 </select>
-                
                 <div class="payment-info">
                     🟡 MVola: 034 68 73 839 (Veronique)<br>
                     🔴 Airtel: 033 73 904 80 (Raveloson)<br>
                     🟠 Orange: 032 86 863 55 (Raphael)
                 </div>
-
                 <label>Mode de paiement :</label>
                 <select name="mode" id="mode-pay" onchange="document.getElementById('yas-area').style.display=(this.value=='Carte Yas'?'block':'none')">
                     <option value="Mobile Money">Paiement Mobile</option>
                     <option value="Carte Yas">Carte Yas (14 chiffres)</option>
                 </select>
-                
                 <div id="yas-area" style="display:none;"><input type="text" name="code_yas" placeholder="Entrez les 14 chiffres"></div>
-                
-                <label>Preuve de paiement (Capture d'écran) :</label>
+                <label>Preuve (Capture d'écran) :</label>
                 <input type="file" name="capture" accept="image/*" required>
-                
                 <button type="submit" class="btn" style="background:#28a745; margin-top:15px;">VALIDER LA COMMANDE</button>
             </form>
         </div>
         {% endif %}
     </div>
-
     <script>
         function calculerPrix() {
             let qty = parseInt(document.getElementById('custom-qty').value);
             let priceInput = document.getElementById('custom-price');
-            
             if (qty < 50 || qty > 500 || isNaN(qty)) {
                 priceInput.value = "Entre 50 et 500";
                 priceInput.style.color = "#dc3545";
                 return;
             }
-            
             let total = qty * 20;
             priceInput.value = total + "ar";
             priceInput.style.color = "#28a745";
         }
-
         function commanderCustom() {
-            let qtyInput = document.getElementById('custom-qty');
-            let qty = parseInt(qtyInput.value);
+            let qty = parseInt(document.getElementById('custom-qty').value);
             let price = document.getElementById('custom-price').value;
-            
-            if (qty >= 50 && qty <= 500) {
-                selectPack(qty, price);
-            } else {
-                alert("Désolé, nous acceptons uniquement entre 50 et 500 réactions.");
-            }
+            if (qty >= 50 && qty <= 500) { selectPack(qty, price); }
         }
-
         function selectPack(q, p) {
             document.getElementById('form-pack').value = q; 
             document.getElementById('form-prix').value = p;
@@ -221,7 +194,8 @@ def order():
             
     return redirect(url_for('index', success='True'))
 
+# --- LANCEMENT ---
+init_db()
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
