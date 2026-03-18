@@ -4,9 +4,8 @@ import requests
 from flask import Flask, render_template_string, request, redirect, url_for
 
 app = Flask(__name__)
-app.secret_key = 'reaction_gasy_2026_id_system_final'
+app.secret_key = 'reaction_gasy_2026_id_fix_final'
 
-# --- CONFIGURATION ---
 DB_PATH = '/tmp/boutique.db' 
 TOKEN_TELEGRAM = "8632263179:AAFDjyU6d4eTCMgg4wM4xB1sDBGmWEMod2s"
 ID_TELEGRAM = "7129218282"
@@ -15,18 +14,15 @@ def init_db():
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        # Création de la table si elle n'existe pas
         cursor.execute('''CREATE TABLE IF NOT EXISTS commandes 
                           (id INTEGER PRIMARY KEY AUTOINCREMENT, pack TEXT, prix TEXT, 
                            type_reaction TEXT, lien TEXT, coms TEXT, mode_payement TEXT, 
                            code_yas TEXT, statut TEXT DEFAULT 'En cours')''')
-        
-        # Vérification si la colonne 'statut' existe (pour éviter le crash au déploiement)
+        # Vérification de la colonne statut
         cursor.execute("PRAGMA table_info(commandes)")
         columns = [column[1] for column in cursor.fetchall()]
         if 'statut' not in columns:
             cursor.execute("ALTER TABLE commandes ADD COLUMN statut TEXT DEFAULT 'En cours'")
-            
         conn.commit()
         conn.close()
     except Exception as e:
@@ -36,25 +32,25 @@ def envoyer_telegram(order_id, pack, prix, lien, coms, mode, code_yas, photo_fil
     info_pay = f"🔑 *CODE YAS:* `{code_yas}`" if mode == "Carte Yas" else "📱 *PAIEMENT MOBILE*"
     txt_coms = coms.strip() if (coms and coms.strip()) else "Aucun"
     
-    # Message avec bouton de validation direct
+    # Message avec l'ID bien précis
     message = (
         f"🆔 *COMMANDE N°:* `{order_id}`\n"
-        f"🚀 *NOUVELLE VENTE - REACTION GASY*\n"
+        f"🚀 *NOUVELLE VENTE*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"📦 *Pack:* {pack} Reactions\n"
         f"💰 *Prix:* {prix}\n"
         f"💬 *Client:* {txt_coms}\n"
-        f"🔗 *Lien:* {lien}\n"
+        f"🔗 [CLIQUER ICI POUR LE LIEN]({lien})\n"
         f"💳 *Mode:* {mode}\n"
         f"{info_pay}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"✅ *CLIQUE ICI POUR VALIDER :*\n"
+        f"✅ *POUR VALIDER UNIQUEMENT CETTE COMMANDE :*\n"
         f"https://reaction-gasy-com.onrender.com/valider/{order_id}"
     )
     
     try:
         requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", 
-                      data={"chat_id": ID_TELEGRAM, "text": message, "parse_mode": "Markdown"})
+                      data={"chat_id": ID_TELEGRAM, "text": message, "parse_mode": "Markdown", "disable_web_page_preview": True})
         photo_file.seek(0)
         files = {'photo': (photo_file.filename, photo_file.read(), photo_file.content_type)}
         requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendPhoto", 
@@ -73,7 +69,7 @@ HTML_TEMPLATE = """
         .container { max-width: 450px; margin: 10px auto; padding: 10px; }
         .card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
         .btn { background: #1877f2; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; }
-        .status-badge { padding: 4px 8px; border-radius: 20px; font-size: 11px; font-weight: bold; }
+        .status-badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; }
         .status-encours { background: #fff3cd; color: #856404; }
         .status-valide { background: #d4edda; color: #155724; }
         .order-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0; }
@@ -83,8 +79,9 @@ HTML_TEMPLATE = """
 <body>
     <div class="header">Reaction Gasy 🇲🇬</div>
     <div class="container">
+        
         <div class="card">
-            <h3 style="margin-top:0; font-size: 16px; color: #1877f2;">📊 Commandes récentes</h3>
+            <h3 style="margin-top:0; font-size: 16px; color: #1877f2;">📊 État des commandes</h3>
             {% if orders %}
                 {% for order in orders %}
                 <div class="order-row">
@@ -98,20 +95,20 @@ HTML_TEMPLATE = """
                 </div>
                 {% endfor %}
             {% else %}
-                <p style="font-size:12px; color:#999; text-align:center;">Aucune commande pour le moment.</p>
+                <p style="font-size:12px; color:#999; text-align:center;">Aucune commande.</p>
             {% endif %}
         </div>
 
         {% if success %}
         <div class="card" style="text-align:center; border: 2px solid #28a745;">
-            <h2 style="color:#28a745;">✅ Reçu !</h2>
-            <p>Commande n°<b>{{ last_id }}</b> enregistrée.</p>
+            <h2 style="color:#28a745;">✅ Envoyé !</h2>
+            <p>Commande n°<b>{{ last_id }}</b> en attente.</p>
             <button class="btn" onclick="window.location.href='/'">Retour</button>
         </div>
         {% else %}
         <div id="step1">
             <div class="card" style="background:#e7f3ff; border: 1px solid #1877f2;">
-                <b>🔢 QUANTITÉ PERSONNALISÉE</b>
+                <b>🔢 CHOISIR QUANTITÉ</b>
                 <input type="number" id="custom-qty" value="50" min="50" max="500" oninput="calculer()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span id="custom-price" style="font-weight:bold; color:#28a745; font-size:18px;">1000ar</span>
@@ -138,7 +135,7 @@ HTML_TEMPLATE = """
                     <option value="Carte Yas">Carte Yas</option>
                 </select>
                 <div id="yas-area" style="display:none;"><input type="text" name="code_yas" placeholder="14 chiffres"></div>
-                <label style="font-size:12px; font-weight:bold;">Capture d'écran (Preuve) :</label>
+                <label style="font-size:12px; font-weight:bold;">Capture Preuve :</label>
                 <input type="file" name="capture" accept="image/*" required>
                 <button type="submit" class="btn" style="background:#28a745; margin-top:10px;">VALIDER</button>
             </form>
@@ -187,6 +184,7 @@ def order():
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
+            # On insère explicitement 'En cours'
             cursor.execute("INSERT INTO commandes (pack, prix, type_reaction, lien, coms, mode_payement, code_yas, statut) VALUES (?,?,?,?,?,?,?,?)", 
                            (pack, prix, "Mix", lien, coms, mode, code_yas, 'En cours'))
             new_id = cursor.lastrowid
@@ -194,9 +192,7 @@ def order():
             conn.close()
             envoyer_telegram(new_id, pack, prix, lien, coms, mode, code_yas, file)
             return redirect(url_for('index', success='True', id=new_id))
-        except Exception as e:
-            print(f"Erreur commande: {e}")
-            
+        except: pass
     return redirect(url_for('index'))
 
 @app.route('/valider/<int:order_id>')
@@ -204,9 +200,18 @@ def valider_commande(order_id):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        # On utilise le paramètre order_id de l'URL pour être ultra précis
         cursor.execute("UPDATE commandes SET statut = 'Validé' WHERE id = ?", (order_id,))
         conn.commit()
         conn.close()
+        return f"<h1>✅ Commande #{order_id} validée !</h1><a href='/'>Retour au site</a>"
+    except:
+        return "Erreur"
+
+init_db()
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port).close()
     except: pass
     return f"<h1>Commande #{order_id} Validée !</h1><a href='/'>Retour</a>"
 
