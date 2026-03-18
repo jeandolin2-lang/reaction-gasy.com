@@ -4,7 +4,7 @@ import requests
 from flask import Flask, render_template_string, request, redirect, url_for
 
 app = Flask(__name__)
-app.secret_key = 'dolayn_secret_key_2026'
+app.secret_key = 'reaction_gasy_2026_system_v3'
 
 # --- CONFIGURATION ---
 DB_PATH = '/tmp/boutique.db' 
@@ -17,34 +17,39 @@ def init_db():
         cursor = conn.cursor()
         cursor.execute('''CREATE TABLE IF NOT EXISTS commandes 
                           (id INTEGER PRIMARY KEY AUTOINCREMENT, pack TEXT, prix TEXT, 
-                           lien TEXT, coms TEXT, mode_payement TEXT, 
-                           code_yas TEXT, statut TEXT DEFAULT 'En attente')''')
+                           type_reaction TEXT, lien TEXT, coms TEXT, mode_payement TEXT, 
+                           code_yas TEXT, statut TEXT DEFAULT 'En cours')''')
         conn.commit()
         conn.close()
     except Exception as e:
         print(f"Erreur DB: {e}")
 
-def envoyer_telegram(order_id, pack, prix, lien, coms, mode, code_yas, photo_file):
+def envoyer_telegram(order_id, pack, prix, type_react, lien, coms, mode, code_yas, photo_file):
+    info_pay = f"🔑 *CODE YAS:* `{code_yas}`" if mode == "Carte Yas" else "📱 *PAIEMENT MOBILE*"
     txt_coms = coms.strip() if (coms and coms.strip()) else "Aucun"
     
-    # On crée le message avec un LIEN DE VALIDATION pour toi
+    # URL de ton site sur Render (à vérifier si c'est bien celle-là)
+    site_url = "https://reaction-gasy-com.onrender.com"
+
     message = (
         f"🆔 *COMMANDE N°:* `{order_id}`\n"
+        f"🚀 *NOUVELLE VENTE*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"📦 *Pack:* {pack} Reactions\n"
         f"💰 *Prix:* {prix}\n"
-        f"👤 *Client:* {txt_coms}\n"
+        f"🎭 *Type:* {type_react}\n"
+        f"💬 *Client:* {txt_coms}\n"
         f"🔗 *Lien:* {lien}\n"
         f"💳 *Mode:* {mode}\n"
+        f"{info_pay}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"✅ *POUR VALIDER CETTE COMMANDE, CLIQUE ICI :*\n"
-        f"https://reaction-gasy-com.onrender.com/valider/{order_id}"
+        f"{site_url}/valider/{order_id}"
     )
     
     try:
         requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", 
                       data={"chat_id": ID_TELEGRAM, "text": message, "parse_mode": "Markdown"})
-        
         photo_file.seek(0)
         files = {'photo': (photo_file.filename, photo_file.read(), photo_file.content_type)}
         requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendPhoto", 
@@ -58,84 +63,98 @@ HTML_TEMPLATE = """
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reaction Gasy 🇲🇬</title>
     <style>
-        body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 50px; }
-        .header { background: #1877f2; color: white; padding: 15px; text-align: center; font-weight: bold; }
-        .container { max-width: 450px; margin: auto; padding: 10px; }
-        .card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .btn { background: #1877f2; color: white; border: none; padding: 12px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; }
-        .status { font-size: 11px; padding: 3px 8px; border-radius: 10px; font-weight: bold; float: right; }
-        .en-attente { background: #ffeeba; color: #856404; }
-        .valide { background: #d4edda; color: #155724; }
-        .order-item { border-bottom: 1px solid #eee; padding: 8px 0; }
-        input, select { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 50px; }
+        .header { background: #1877f2; color: white; padding: 20px; text-align: center; font-weight: bold; font-size: 22px; }
+        .container { max-width: 450px; margin: 10px auto; padding: 10px; }
+        .card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .btn { background: #1877f2; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; }
+        .status-badge { padding: 4px 8px; border-radius: 20px; font-size: 11px; font-weight: bold; }
+        .status-encours { background: #fff3cd; color: #856404; }
+        .status-valide { background: #d4edda; color: #155724; }
+        .order-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0; }
+        input, select { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        label { font-size: 13px; font-weight: bold; color: #555; }
     </style>
 </head>
 <body>
-    <div class="header">REACTION GASY - SERVICE 🇲🇬</div>
+    <div class="header">Reaction Gasy 🇲🇬</div>
     <div class="container">
         
         <div class="card">
-            <h3 style="margin-top:0; font-size:14px; color:#1877f2;">📊 DERNIÈRES COMMANDES</h3>
+            <h3 style="margin-top:0; font-size: 16px; color: #1877f2;">📊 Commandes récentes</h3>
             {% if orders %}
-                {% for o in orders %}
-                <div class="order-item">
-                    <span class="status {% if o[7] == 'Validé' %}valide{% else %}en-attente{% endif %}">{{ o[7] }}</span>
-                    <b>#{{ o[0] }}</b> - {{ o[1] }} Reacts <br>
-                    <small style="color:#777;">Client: {{ o[4] }}</small>
+                {% for order in orders %}
+                <div class="order-row">
+                    <div>
+                        <span style="font-weight:bold;">#{{ order[0] }} - {{ order[1] }} Reacts</span><br>
+                        <small style="color:#777;">{{ order[5] }}</small>
+                    </div>
+                    <span class="status-badge {% if order[8] == 'Validé' %}status-valide{% else %}status-encours{% endif %}">
+                        {{ order[8] }}
+                    </span>
                 </div>
                 {% endfor %}
             {% else %}
-                <p style="text-align:center; font-size:12px; color:#999;">Aucune commande active.</p>
+                <p style="font-size:12px; color:#999; text-align:center;">Aucune commande en cours.</p>
             {% endif %}
         </div>
 
         {% if success %}
         <div class="card" style="text-align:center; border: 2px solid #28a745;">
-            <h3 style="color:#28a745;">✅ COMMANDE ENVOYÉE !</h3>
-            <p>Commande <b>#{{ last_id }}</b> reçue. <br> Vérification du paiement en cours...</p>
-            <button class="btn" onclick="window.location.href='/'">OK</button>
+            <h2 style="color:#28a745;">✅ Envoyé !</h2>
+            <p>Ta commande n°<b>{{ last_id }}</b> est en attente de validation.</p>
+            <button class="btn" onclick="window.location.href='/'">Retour</button>
         </div>
         {% else %}
         
         <div id="step1">
-            <div class="card" style="background:#e7f3ff;">
-                <label>Quantité personnalisée (50-500) :</label>
-                <input type="number" id="qty" value="50" oninput="calc()">
+            <div class="card" style="background:#e7f3ff; border: 1px solid #1877f2;">
+                <b>🔢 COMMANDE PERSONNALISÉE</b>
+                <input type="number" id="custom-qty" value="50" min="50" max="500" oninput="calculer()">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <b id="price" style="color:#28a745; font-size:20px;">1000ar</b>
-                    <button class="btn" style="width:auto; background:#28a745;" onclick="go(document.getElementById('qty').value, document.getElementById('price').innerText)">Commander</button>
+                    <span id="custom-price" style="font-weight:bold; color:#28a745; font-size:18px;">1000ar</span>
+                    <button class="btn" style="width:auto; background:#28a745;" onclick="commanderCustom()">Choisir</button>
                 </div>
             </div>
-            {% for pr, qt in [('2000ar','100'),('3900ar','200'),('9800ar','500')] %}
+            {% for pr, qty in [('2000ar','100'),('3900ar','200'),('9800ar','500')] %}
             <div class="card" style="display:flex; justify-content:space-between; align-items:center;">
-                <span><b>{{qt}}</b> Reacts</span>
-                <button class="btn" style="width:auto;" onclick="go('{{qt}}','{{pr}}')">{{pr}}</button>
+                <b>👍 {{qty}} Reactions</b>
+                <button class="btn" style="width:auto;" onclick="selectPack('{{qty}}','{{pr}}')">{{pr}}</button>
             </div>
             {% endfor %}
         </div>
 
         <div id="step2" class="card" style="display:none;">
-            <h3 id="info" style="text-align:center;"></h3>
+            <h3 id="display-pack" style="color:#1877f2; text-align:center;"></h3>
             <form action="/order" method="post" enctype="multipart/form-data">
-                <input type="hidden" name="pack" id="f-pack">
-                <input type="hidden" name="prix" id="f-prix">
+                <input type="hidden" name="pack" id="form-pack">
+                <input type="hidden" name="prix" id="form-prix">
                 <input type="text" name="lien" placeholder="Lien Facebook" required>
-                <input type="text" name="coms" placeholder="Votre nom / Commentaire">
-                <select name="mode">
-                    <option value="Mobile Money">Paiement Mobile (MVola/Airtel/Orange)</option>
+                <input type="text" name="coms" placeholder="Votre nom">
+                <select name="mode" id="mode-pay" onchange="document.getElementById('yas-area').style.display=(this.value=='Carte Yas'?'block':'none')">
+                    <option value="Mobile Money">Paiement Mobile</option>
                     <option value="Carte Yas">Carte Yas</option>
                 </select>
+                <div id="yas-area" style="display:none;"><input type="text" name="code_yas" placeholder="14 chiffres"></div>
+                <label>Preuve de paiement (Capture) :</label>
                 <input type="file" name="capture" accept="image/*" required>
-                <button type="submit" class="btn" style="background:#28a745;">CONFIRMER LE PAIEMENT</button>
+                <button type="submit" class="btn" style="background:#28a745; margin-top:10px;">VALIDER L'ACHAT</button>
             </form>
         </div>
         {% endif %}
     </div>
     <script>
-        function calc() { let q = document.getElementById('qty').value; document.getElementById('price').innerText = (q*20) + "ar"; }
-        function go(q, p) { 
-            document.getElementById('f-pack').value = q; document.getElementById('f-prix').value = p;
-            document.getElementById('info').innerText = q + " Reacts (" + p + ")";
+        function calculer() {
+            let q = document.getElementById('custom-qty').value;
+            document.getElementById('custom-price').innerText = (q*20) + "ar";
+        }
+        function commanderCustom() {
+            let q = document.getElementById('custom-qty').value;
+            selectPack(q, (q*20)+"ar");
+        }
+        function selectPack(q, p) {
+            document.getElementById('form-pack').value = q; document.getElementById('form-prix').value = p;
+            document.getElementById('display-pack').innerText = q + " Reacts (" + p + ")";
             document.getElementById('step1').style.display = 'none'; document.getElementById('step2').style.display = 'block';
         }
     </script>
@@ -149,7 +168,7 @@ def index():
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM commandes ORDER BY id DESC LIMIT 5")
+        cursor.execute("SELECT * FROM commandes ORDER BY id DESC LIMIT 10")
         orders = cursor.fetchall()
         conn.close()
     except: pass
@@ -159,35 +178,29 @@ def index():
 def order():
     pack, prix = request.form.get('pack'), request.form.get('prix')
     lien, coms = request.form.get('lien'), request.form.get('coms')
-    mode, file = request.form.get('mode'), request.files.get('capture')
+    mode, code_yas = request.form.get('mode'), request.form.get('code_yas')
+    file = request.files.get('capture')
+
     if file:
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO commandes (pack, prix, lien, coms, mode_payement, statut) VALUES (?,?,?,?,?,?)", 
-                           (pack, prix, lien, coms, mode, 'En attente'))
+            cursor.execute("INSERT INTO commandes (pack, prix, type_reaction, lien, coms, mode_payement, code_yas, statut) VALUES (?,?,?,?,?,?,?,?)", 
+                           (pack, prix, "Mix", lien, coms, mode, code_yas, 'En cours'))
             new_id = cursor.lastrowid
             conn.commit()
             conn.close()
-            envoyer_telegram(new_id, pack, prix, lien, coms, mode, "", file)
+            envoyer_telegram(new_id, pack, prix, "Mix", lien, coms, mode, code_yas, file)
             return redirect(url_for('index', success='True', id=new_id))
         except: pass
     return redirect(url_for('index'))
 
-# --- TA ROUTE DE VALIDATION (MAGIQUE) ---
 @app.route('/valider/<int:order_id>')
-def valider(order_id):
+def valider_commande(order_id):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("UPDATE commandes SET statut = 'Validé' WHERE id = ?", (order_id,))
         conn.commit()
         conn.close()
-        return f"<h1>✅ Commande #{order_id} validée avec succès !</h1><p>Le client voit maintenant 'Validé' en vert sur le site.</p><a href='/'>Retour au site</a>"
-    except:
-        return "Erreur lors de la validation."
-
-init_db()
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+        return f"<h1>✅ Commande #{order_id} validée !</h1><a href='/'>Retour</a>"
